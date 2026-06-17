@@ -19,8 +19,12 @@ pub struct Connect {
     port: String,
     fullscreen: bool,
     status: String,
+    /// Editable role label for the selected machine (e.g. "Backend agent").
+    role: String,
     /// Remembered username per computer name, so only the password is needed.
     host_users: HashMap<String, String>,
+    /// Remembered role label per computer name (the "agent board").
+    host_roles: HashMap<String, String>,
     last_used: Option<String>,
     auto_started: bool,
     pending: Option<Receiver<nd::Discovery>>,
@@ -36,11 +40,14 @@ impl Connect {
         // Drop the deprecated "neardesk" account so the real one is entered instead.
         let stale = |u: &str| u.eq_ignore_ascii_case("neardesk");
         let mut host_users = HashMap::new();
+        let mut host_roles = HashMap::new();
         for (k, v) in &cfg {
             if let Some(host) = k.strip_prefix("user.") {
                 if !stale(v) {
                     host_users.insert(host.to_owned(), v.clone());
                 }
+            } else if let Some(host) = k.strip_prefix("role.") {
+                host_roles.insert(host.to_owned(), v.clone());
             }
         }
         // Pre-fill the remembered username, else guess this machine's own account.
@@ -59,7 +66,9 @@ impl Connect {
                 .unwrap_or_else(|| DEFAULT_PORT.to_string()),
             fullscreen: true,
             status: String::new(),
+            role: String::new(),
             host_users,
+            host_roles,
             last_used: cfg.get("hostname").cloned().filter(|s| !s.is_empty()),
             auto_started: false,
             pending: None,
@@ -95,12 +104,38 @@ impl Connect {
             .map(|(ip, _)| *ip)
     }
 
-    /// Select a host and auto-fill its remembered username.
+    /// Select a host and load its remembered username + role.
     fn select(&mut self, ip: Ipv4Addr) {
         self.selected = Some(ip);
-        if let Some(user) = self.host_users.get(&self.host_label(ip)) {
+        let host = self.host_label(ip);
+        if let Some(user) = self.host_users.get(&host) {
             self.username = user.clone();
         }
+        self.role = self.host_roles.get(&host).cloned().unwrap_or_default();
+    }
+
+    /// Save the selected machine's username, role and port to disk.
+    fn persist(&mut self) {
+        let Some(ip) = self.selected else { return };
+        let host = self.host_label(ip);
+        let user = self.username.trim().to_owned();
+        let role = self.role.trim().to_owned();
+        self.host_users.insert(host.clone(), user.clone());
+
+        let mut cfg = nd::load_config();
+        cfg.insert("hostname".to_owned(), host.clone());
+        cfg.insert("username".to_owned(), user.clone());
+        cfg.insert("port".to_owned(), self.port.trim().to_owned());
+        cfg.insert(format!("user.{host}"), user);
+        if role.is_empty() {
+            self.host_roles.remove(&host);
+            cfg.remove(&format!("role.{host}"));
+        } else {
+            self.host_roles.insert(host.clone(), role.clone());
+            cfg.insert(format!("role.{host}"), role);
+        }
+        nd::save_config(&cfg);
+        self.last_used = Some(host);
     }
 
     /// Auto-scan on first show, then collect a finished scan.
@@ -159,18 +194,7 @@ impl Connect {
     }
 
     fn connect(&mut self, ip: Ipv4Addr) {
-        let host = self.host_label(ip);
-        let user = self.username.trim().to_owned();
-        self.host_users.insert(host.clone(), user.clone());
-
-        let mut cfg = nd::load_config();
-        cfg.insert("hostname".to_owned(), host.clone());
-        cfg.insert("username".to_owned(), user.clone());
-        cfg.insert("port".to_owned(), self.port.trim().to_owned());
-        cfg.insert(format!("user.{host}"), user);
-        nd::save_config(&cfg);
-        self.last_used = Some(host);
-
+        self.persist();
         self.status = match nd::launch_rdp(
             ip,
             self.parsed_port(),
@@ -236,7 +260,7 @@ impl Connect {
                     .max_height(180.0)
                     .show(ui, |ui| {
                         egui::Grid::new("computers")
-                            .num_columns(3)
+                            .num_columns(4)
                             .striped(true)
                             .spacing([14.0, 8.0])
                             .show(ui, |ui| {
@@ -260,6 +284,12 @@ impl Connect {
         {
             self.select(ip);
         }
+        // Role column — the "agent board" label.
+        let role = name.as_ref().and_then(|n| self.host_roles.get(n));
+        match role {
+            Some(r) => ui.label(RichText::new(r).color(ACCENT)),
+            None => ui.label(RichText::new("—").color(widgets::MUTED)),
+        };
         let ip_text = if name.is_some() {
             ip.to_string()
         } else {
@@ -292,15 +322,26 @@ impl Connect {
                  is needed.",
             );
             ui.add_space(6.0);
+            let mut changed = false;
             egui::Grid::new("creds")
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
+                    ui.label("Role");
+                    changed |= ui
+                        .add(
+                            egui::TextEdit::singleline(&mut self.role)
+                                .hint_text("e.g. Backend agent, Test runner"),
+                        )
+                        .lost_focus();
+                    ui.end_row();
                     ui.label("Username");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.username)
-                            .hint_text("the account on that PC"),
-                    );
+                    changed |= ui
+                        .add(
+                            egui::TextEdit::singleline(&mut self.username)
+                                .hint_text("the account on that PC"),
+                        )
+                        .lost_focus();
                     ui.end_row();
                     ui.label("Password");
                     ui.add(
@@ -310,6 +351,9 @@ impl Connect {
                     );
                     ui.end_row();
                 });
+            if changed && self.selected.is_some() {
+                self.persist();
+            }
             egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
                 egui::Grid::new("adv")
                     .num_columns(2)

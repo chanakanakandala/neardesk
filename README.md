@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="assets/logo.png" alt="NearDesk logo" width="140">
+  <img src="assets/social-preview.png" alt="NearDesk" width="760">
 </p>
-
-<h1 align="center">NearDesk</h1>
 
 <p align="center">
   <a href="https://github.com/chanakanakandala/neardesk/actions/workflows/ci.yml"><img src="https://github.com/chanakanakandala/neardesk/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -13,50 +11,95 @@
   <img src="https://img.shields.io/badge/built%20with-Rust-CE412B?logo=rust&logoColor=white" alt="Built with Rust">
 </p>
 
-**Zero-config Remote Desktop for your LAN.** Run one small app on any Windows PC.
-On the PC you want to reach, flip on sharing with a single click; from another PC,
-NearDesk finds it on the network by name (or by scanning for the Remote Desktop
-port) and opens the session for you.
+**Run AI coding agents across your Windows PCs, all from one laptop.**
 
-One app, no servers, no accounts, no cloud. Native Windows RDP under the hood, so
-the picture is sharp and the latency is low.
+NearDesk turns the spare Windows machines on your network into dedicated workers
+for AI coding agents. Think of a mini PC, an old desktop, or a build box sitting
+idle. Run Claude Code, Codex, Cursor, or Copilot on each one, then reach any of
+them from your laptop in a single click. There are no IP addresses to remember, no
+cloud, and no accounts. It is just native Windows Remote Desktop.
 
-Built in Rust with [`egui`](https://github.com/emilk/egui) · MIT licensed.
+```
+Laptop              control center
+  ├─ Mini PC 1      Backend agent      (Claude Code / Codex)
+  ├─ Mini PC 2      Frontend agent     (Cursor / Copilot)
+  ├─ Mini PC 3      Tests and builds
+  └─ Spare PC       Sandbox / experiments
+```
 
----
+NearDesk finds your machines by name, lets you label each one with a **role**, and
+connects instantly. A pile of headless PCs becomes one tidy board you drive from
+your desk.
 
-## Why NearDesk?
+<p align="center">
+  <a href="https://github.com/chanakanakandala/neardesk/releases/latest"><b>⬇&nbsp; Download the latest Windows release</b></a>
+</p>
 
-A lot of development now runs through AI coding agents — Claude Code, OpenAI Codex,
-GitHub Copilot CLI, and others. They work best when each one runs **where its task
-belongs**, instead of everything piling onto the single laptop in front of you:
+> **Status: early but useful.** NearDesk already does the hard part well, with
+> zero-config discovery, per-machine roles, and one-click native RDP. Task and
+> workspace orchestration is on the [roadmap](#roadmap). NearDesk manages the
+> machines your agents run on; it does not replace the agents.
 
-- a spare **mini PC** grinding through a long refactor,
-- a **build server** running the full test suite,
-- a **GPU box** handling model work,
-- your **main workstation** kept free for whatever you're actively driving.
+## Demo
 
-To work like this you need to jump onto those machines quickly — start an agent,
-watch it, steer it, review the diff — then move on to the next one. NearDesk makes
-that a one-click move: it finds the Windows machines on your LAN and drops you
-straight into a full Remote Desktop session. Delegating a task to the right agent
-on the right box becomes as easy as switching tabs.
+<p align="center">
+  <img src="assets/screenshot-connect.png" alt="NearDesk agent board" width="580">
+</p>
+
+Open NearDesk and it **auto-discovers** your machines by role and name. Pick one,
+press **Connect**, and a native Remote Desktop session opens at your display's
+resolution.
+
+## Why run agents on separate machines?
+
+A single laptop cannot comfortably run every agent, build, test suite, and browser
+session at once. They fight for CPU, RAM, disk, and your attention. Giving each job
+its own machine is the obvious fix. The hard part is managing a pile of headless
+PCs by IP address, and that is what NearDesk removes.
+
+| Machine | Job |
+|---------|-----|
+| **Laptop** | Your command center, for orchestrating and reviewing. |
+| **Mini PC** | A long-running backend refactor. |
+| **Spare PC** | Frontend work, in parallel. |
+| **Build box** | Tests, builds, and CI-style runs. |
+| **Sandbox** | Risky experiments, kept isolated. |
+
+Label each machine once, then reconnect in a click. Your laptop stays fast and free
+for the task you are actually driving. It also works just as well for the plain
+case: *"I just want to remote into my mini PC without remembering its IP."*
+
+## Security model
+
+NearDesk does **not** implement its own remote-desktop protocol, and it never
+routes your traffic through a server.
+
+- It uses **Windows' built-in Remote Desktop** (`mstsc`) with **Network Level
+  Authentication required**.
+- **No cloud, no account, no background service.** Authentication is handled
+  entirely by Windows.
+- NearDesk never **stores or proxies** your password.
+- Discovery is read-only. It only checks the Remote Desktop port on devices on
+  **your local network**.
+
+> Releases are not code-signed yet, so Windows SmartScreen may warn on first run.
+> Choose **More info → Run anyway**, or [build from source](#getting-started).
 
 ## One app, three tabs
 
 | Tab | What it does |
 |-----|--------------|
-| **Connect** | Find another Windows PC on your network and open Remote Desktop. Type a name, or just press **Discover** to scan the subnet. |
-| **This PC** | See how this machine looks on the network — name, signed-in user, **Windows edition & build**, architecture, IP, and Remote Desktop status — and enable sharing in one click (self-elevates via UAC). |
+| **Connect** | Your machine board. Windows PCs discovered by **role** and name. Pick one and open Remote Desktop; the role, username, and credential are remembered per machine. |
+| **This PC** | How this machine looks on the network (name, signed-in user, **Windows edition and build**, architecture, IP, and Remote Desktop status), plus one-click sharing (self-elevates via UAC). |
 | **About** | What NearDesk is for, version, and credits. |
 
-The same `neardesk.exe` runs on both ends — there's nothing else to install.
+The same `neardesk.exe` runs on both ends, with nothing else to install.
 
 ## How discovery works
 
-1. **By name** — resolves `OFFICE-PC`, then `OFFICE-PC.local` (mDNS), and checks the
-   Remote Desktop port is open.
-2. **By scan** — in parallel it probes every host on each network you're attached
+1. **By name.** It resolves `OFFICE-PC`, then `OFFICE-PC.local` (mDNS), and checks
+   the Remote Desktop port is open.
+2. **By scan.** In parallel it probes every host on each network you are attached
    to (Wi-Fi, Ethernet, VPN) for an open RDP port (3389), then reads each host's
    real name from its RDP certificate. The last-used PC is auto-selected.
 
@@ -64,12 +107,12 @@ The same `neardesk.exe` runs on both ends — there's nothing else to install.
 
 ```mermaid
 flowchart TB
-    subgraph app["neardesk — egui GUI"]
+    subgraph app["neardesk (egui GUI)"]
         connect["Connect view"]
         thispc["This PC view"]
     end
 
-    subgraph core["neardesk-core — std only"]
+    subgraph core["neardesk-core (std only)"]
         discovery["Discovery<br/>scan all subnets + RDP-cert names"]
         launch["Launch<br/>build .rdp, match resolution"]
         share["Share<br/>enable RDP, grant admin, clipboard"]
@@ -89,58 +132,50 @@ flowchart TB
     host -.-> remote
 ```
 
-The same `neardesk.exe` plays both roles: **This PC** configures the local
-machine as an RDP host; **Connect** discovers and opens sessions to others.
+The same `neardesk.exe` plays both roles. **This PC** configures the local machine
+as an RDP host; **Connect** discovers and opens sessions to others.
 
-## Quick start
+## Getting started
 
-### 1. Prerequisites
+### 1. Install
 
-- Two or more Windows PCs on the same LAN.
-- The PC you connect **to** must be Windows **Pro/Enterprise** (required to host RDP).
-- The PC you connect **from** can be any Windows (the `mstsc` client is built in).
-- **To build from source:** the [Rust toolchain](https://rustup.rs) and the
-  **MSVC C++ Build Tools** (`link.exe`). If you don't have them:
+**Download (fastest):** grab `neardesk.exe` from the
+[latest release](https://github.com/chanakanakandala/neardesk/releases/latest) and
+run it on each PC. Nothing else is needed.
 
-  ```sh
-  winget install Rustlang.Rustup
-  winget install Microsoft.VisualStudio.2022.BuildTools `
-    --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-  ```
-
-### 2. Build
+**Or build from source.** You need the [Rust toolchain](https://rustup.rs) and the
+**MSVC C++ Build Tools**:
 
 ```sh
+winget install Rustlang.Rustup
+winget install Microsoft.VisualStudio.2022.BuildTools `
+  --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+
 cd neardesk
-cargo build --release          # or:  ./build.ps1
+cargo build --release          # or:  ./build.ps1   (-Clean / -Run)
 ```
 
-The binary lands at `target/release/neardesk.exe`.
+### 2. Share the PC you want to reach
 
-Helper scripts (PowerShell):
+On that PC, open **This PC**, then **Turn on remote access** (approve the UAC
+prompt). It enables Remote Desktop, grants your Windows account access, and shows
+the computer name. You connect with your **normal Windows password**, with nothing
+extra to set.
 
-| Script | What it does |
-|--------|--------------|
-| `./build.ps1` | Release build. `-Clean` for a fresh build, `-Run` to launch after. |
-| `./run.ps1` | Build and launch in one step. |
-| `./check.ps1` | Formatting check + clippy (warnings denied) — the contributor lint gate. |
+> The host PC must be Windows **Pro/Enterprise** (required to host RDP). The PC you
+> connect *from* can be any Windows.
 
-### 3. Share the PC you want to reach
+### 3. Connect from another PC
 
-Run `neardesk.exe` on it, open the **This PC** tab, and click **Enable Remote
-Desktop** (approve the UAC prompt). Note the computer name shown there.
-
-### 4. Connect from another PC
-
-Run `neardesk.exe`, stay on the **Connect** tab, enter that name, click
-**Discover**, then **Connect**. Windows handles the username/password prompt on
-first connect and can remember it.
+Open NearDesk on your laptop and it auto-discovers PCs on the network. Pick yours,
+enter its Windows password, and press **Connect**. It is remembered afterwards, so
+the next time is one silent click.
 
 ## Configuration
 
 Settings are remembered next to `neardesk.exe` in a plain `neardesk.conf`
-(`key=value`). Delete it to reset. NearDesk never stores passwords —
-authentication is left entirely to Windows.
+(`key=value`). Delete it to reset. NearDesk never stores passwords; authentication
+is left entirely to Windows.
 
 ## Project layout
 
@@ -148,6 +183,7 @@ authentication is left entirely to Windows.
 neardesk/
 ├─ core/            # neardesk-core: discovery, system info, RDP setup (std-only, no deps)
 ├─ app/             # neardesk GUI
+│  ├─ build.rs      # embeds version metadata, manifest and icon
 │  └─ src/
 │     ├─ main.rs    # window shell + sidebar navigation
 │     ├─ connect.rs # the "Connect" tab
@@ -155,7 +191,7 @@ neardesk/
 │     ├─ about.rs   # the "About" tab
 │     ├─ logo.rs    # embedded logo (icon + texture)
 │     └─ widgets.rs # shared UI helpers + palette
-├─ assets/logo.png  # app icon / sidebar logo
+├─ assets/          # logo, icon, banner, screenshots
 ├─ build.ps1        # release build (-Clean / -Run)
 ├─ run.ps1          # build + launch
 └─ check.ps1        # fmt + clippy lint gate
@@ -164,17 +200,30 @@ neardesk/
 The `core` crate is intentionally dependency-free `std`; only the GUI pulls in
 `eframe`. Keep it that way when contributing.
 
-## Security notes
+## Roadmap
 
-- NearDesk enables Windows' own Remote Desktop with **Network Level
-  Authentication required** — nothing weaker.
-- Discovery is read-only TCP probing on your local subnet.
-- No credentials are stored or transmitted by NearDesk itself.
+NearDesk is the control layer today; the goal is a lightweight local agent
+workspace. Planned, roughly in order:
+
+- **Status notes:** a quick line per machine (*running backend refactor*, *idle*, *blocked*).
+- **Quick actions:** copy hostname or RDP command, open a shared folder.
+- **Health at a glance:** online or offline, and RDP-reachable.
+- **Agent board:** roles and status in one view.
+
+Issues and ideas welcome.
 
 ## Contributing
 
-Issues and PRs welcome. Run `./check.ps1` (formatting + clippy) before submitting,
-and keep `core` free of third-party crates.
+Issues and PRs welcome. Run `./check.ps1` (formatting and clippy) before
+submitting, and keep `core` free of third-party crates.
+
+| Script | What it does |
+|--------|--------------|
+| `./build.ps1` | Release build. `-Clean` for a fresh build, `-Run` to launch after. |
+| `./run.ps1` | Build and launch in one step. |
+| `./check.ps1` | Formatting check and clippy (warnings denied). |
+
+If NearDesk is useful to you, a ⭐ helps other mini-PC and homelab users find it.
 
 ## License
 

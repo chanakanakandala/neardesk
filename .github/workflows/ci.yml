@@ -61,10 +61,22 @@ jobs:
           name: neardesk
           path: dist
 
+      - name: Checksum
+        if: steps.ver.outputs.exists == 'false'
+        run: cd dist && sha256sum neardesk.exe | tee neardesk.exe.sha256
+
       - name: Publish release
         if: steps.ver.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          files: dist/neardesk.exe
+          files: |
+            dist/neardesk.exe
+            dist/neardesk.exe.sha256
           generate_release_notes: true
+          body: |
+            **Windows build of NearDesk.** Download `neardesk.exe` and run it on each PC — nothing else to install.
+
+            Not code-signed yet, so Windows SmartScreen may warn on first run — choose **More info → Run anyway**.
+
+            Verify the download: `CertUtil -hashfile neardesk.exe SHA256` should match `neardesk.exe.sha256`.
