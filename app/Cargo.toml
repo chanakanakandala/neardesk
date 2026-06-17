@@ -1,0 +1,15 @@
+[package]
+name = "neardesk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "NearDesk — discover and connect to Windows PCs on your LAN via Remote Desktop"
+
+[[bin]]
+name = "neardesk"
+path = "src/main.rs"
+
+[dependencies]
+neardesk-core = { path = "../core" }
+eframe = "0.27"
+image = { version = "0.24", default-features = false, features = ["png"] }

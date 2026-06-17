@@ -1,0 +1,9 @@
+[package]
+name = "neardesk-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "neardesk_core"
+path = "src/lib.rs"
