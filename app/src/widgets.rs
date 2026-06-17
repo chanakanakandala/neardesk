@@ -5,7 +5,6 @@ use eframe::egui::{Color32, RichText, Ui};
 pub const ACCENT: Color32 = Color32::from_rgb(80, 160, 255);
 pub const OK: Color32 = Color32::from_rgb(64, 192, 100);
 pub const BAD: Color32 = Color32::from_rgb(224, 84, 84);
-pub const WARN: Color32 = Color32::from_rgb(230, 168, 50);
 pub const MUTED: Color32 = Color32::from_gray(150);
 
 /// A small filled "pill" badge, e.g. `Enabled` / `Disabled`.

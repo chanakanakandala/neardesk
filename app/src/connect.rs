@@ -1,8 +1,9 @@
 //! "Connect" view: discover Windows PCs on the LAN and open Remote Desktop.
 
 use crate::widgets::{self, ACCENT};
-use eframe::egui::{self, Color32, RichText, Ui};
+use eframe::egui::{self, Color32, Layout, RichText, Ui};
 use neardesk_core as nd;
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::mpsc::{channel, Receiver};
 use std::time::Duration;
@@ -11,13 +12,20 @@ const DEFAULT_PORT: u16 = 3389;
 const REPAINT_WHILE_SCANNING: Duration = Duration::from_millis(150);
 
 pub struct Connect {
+    /// Optional "find by name" hint (advanced).
     name: String,
+    username: String,
+    password: String,
     port: String,
     fullscreen: bool,
     status: String,
-    /// Channel to the background discovery thread; `Some` while a scan runs.
+    /// Remembered username per computer name, so only the password is needed.
+    host_users: HashMap<String, String>,
+    last_used: Option<String>,
+    auto_started: bool,
     pending: Option<Receiver<nd::Discovery>>,
     hits: Vec<Ipv4Addr>,
+    names: HashMap<Ipv4Addr, String>,
     name_match: Option<Ipv4Addr>,
     selected: Option<Ipv4Addr>,
 }
@@ -25,16 +33,38 @@ pub struct Connect {
 impl Connect {
     pub fn new() -> Self {
         let cfg = nd::load_config();
+        // Drop the deprecated "neardesk" account so the real one is entered instead.
+        let stale = |u: &str| u.eq_ignore_ascii_case("neardesk");
+        let mut host_users = HashMap::new();
+        for (k, v) in &cfg {
+            if let Some(host) = k.strip_prefix("user.") {
+                if !stale(v) {
+                    host_users.insert(host.to_owned(), v.clone());
+                }
+            }
+        }
+        // Pre-fill the remembered username, else guess this machine's own account.
+        let username = cfg
+            .get("username")
+            .cloned()
+            .filter(|u| !stale(u))
+            .unwrap_or_else(nd::current_username);
         Self {
-            name: cfg.get("hostname").cloned().unwrap_or_default(),
+            name: String::new(),
+            username,
+            password: String::new(),
             port: cfg
                 .get("port")
                 .cloned()
                 .unwrap_or_else(|| DEFAULT_PORT.to_string()),
             fullscreen: true,
-            status: "Enter a PC name, or just press Discover to scan the network.".to_owned(),
+            status: String::new(),
+            host_users,
+            last_used: cfg.get("hostname").cloned().filter(|s| !s.is_empty()),
+            auto_started: false,
             pending: None,
             hits: Vec::new(),
+            names: HashMap::new(),
             name_match: None,
             selected: None,
         }
@@ -48,14 +78,52 @@ impl Connect {
         self.port.trim().parse().unwrap_or(DEFAULT_PORT)
     }
 
-    /// Drive the background scan: collect its result and keep repainting.
+    /// Computer name if known, else the IP.
+    fn host_label(&self, ip: Ipv4Addr) -> String {
+        self.names
+            .get(&ip)
+            .cloned()
+            .unwrap_or_else(|| ip.to_string())
+    }
+
+    /// The discovered IP whose name matches the last-used computer, if present.
+    fn last_used_ip(&self) -> Option<Ipv4Addr> {
+        let last = self.last_used.as_deref()?;
+        self.names
+            .iter()
+            .find(|(_, name)| name.as_str() == last)
+            .map(|(ip, _)| *ip)
+    }
+
+    /// Select a host and auto-fill its remembered username.
+    fn select(&mut self, ip: Ipv4Addr) {
+        self.selected = Some(ip);
+        if let Some(user) = self.host_users.get(&self.host_label(ip)) {
+            self.username = user.clone();
+        }
+    }
+
+    /// Auto-scan on first show, then collect a finished scan.
     pub fn poll(&mut self, ctx: &egui::Context) {
+        if !self.auto_started {
+            self.auto_started = true;
+            self.start_discovery();
+        }
         if let Some(rx) = &self.pending {
             if let Ok(found) = rx.try_recv() {
-                self.selected = nd::pick_target(&found);
-                let nd::Discovery { hits, name_match } = found;
+                let target = nd::pick_target(&found);
+                let nd::Discovery {
+                    hits,
+                    name_match,
+                    names,
+                } = found;
                 self.hits = hits;
+                self.names = names;
                 self.name_match = name_match;
+                self.selected = None;
+                if let Some(ip) = target.or_else(|| self.last_used_ip()) {
+                    self.select(ip);
+                }
                 self.status = self.describe();
                 self.pending = None;
             }
@@ -69,8 +137,9 @@ impl Connect {
         let name = self.name.trim().to_owned();
         let port = self.parsed_port();
         self.port = port.to_string();
-        self.status = "Searching the local network\u{2026}".to_owned();
+        self.status = String::new();
         self.hits.clear();
+        self.names.clear();
         self.name_match = None;
         self.selected = None;
 
@@ -82,24 +151,34 @@ impl Connect {
     }
 
     fn describe(&self) -> String {
-        match (self.hits.as_slice(), self.name_match) {
-            ([], _) => {
-                "No PCs with Remote Desktop found. Is the other PC on and shared?".to_owned()
-            }
-            (_, Some(ip)) => format!("Found \u{201C}{}\u{201D} at {ip}.", self.name.trim()),
-            ([only], None) => format!("Found one PC at {only}."),
-            (many, None) => format!("Found {} PCs \u{2014} pick one below.", many.len()),
+        match self.hits.len() {
+            0 => String::new(),
+            1 => format!("Found {}.", self.host_label(self.hits[0])),
+            n => format!("Found {n} computers."),
         }
     }
 
     fn connect(&mut self, ip: Ipv4Addr) {
-        let mut cfg = nd::load_config();
-        cfg.insert("hostname".to_owned(), self.name.trim().to_owned());
-        cfg.insert("port".to_owned(), self.port.trim().to_owned());
-        nd::save_config(&cfg);
+        let host = self.host_label(ip);
+        let user = self.username.trim().to_owned();
+        self.host_users.insert(host.clone(), user.clone());
 
-        self.status = match nd::launch_mstsc(ip, self.fullscreen) {
-            Ok(()) => format!("Connecting to {ip}\u{2026}"),
+        let mut cfg = nd::load_config();
+        cfg.insert("hostname".to_owned(), host.clone());
+        cfg.insert("username".to_owned(), user.clone());
+        cfg.insert("port".to_owned(), self.port.trim().to_owned());
+        cfg.insert(format!("user.{host}"), user);
+        nd::save_config(&cfg);
+        self.last_used = Some(host);
+
+        self.status = match nd::launch_rdp(
+            ip,
+            self.parsed_port(),
+            &self.username,
+            &self.password,
+            self.fullscreen,
+        ) {
+            Ok(()) => format!("Opening {ip}\u{2026}"),
             Err(e) => format!("Failed to launch Remote Desktop: {e}"),
         };
     }
@@ -108,87 +187,165 @@ impl Connect {
         ui.heading("Connect to a PC");
         widgets::caption(
             ui,
-            "Find a Windows PC on your network and open Remote Desktop.",
+            "Pick a computer on your network and open Remote Desktop.",
         );
         ui.add_space(10.0);
 
+        self.computers(ui);
+        ui.add_space(10.0);
+        self.sign_in(ui);
+        ui.add_space(12.0);
+        self.connect_bar(ui);
+    }
+
+    /// The live list of discovered computers, with a rescan control.
+    fn computers(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.strong("Computers on your network");
+            ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                if self.is_scanning() {
+                    ui.add(egui::Spinner::new().size(16.0));
+                    ui.label(
+                        RichText::new("Scanning\u{2026}")
+                            .color(widgets::MUTED)
+                            .small(),
+                    );
+                } else if ui
+                    .add(egui::Button::new(RichText::new("Rescan").color(ACCENT)))
+                    .clicked()
+                {
+                    self.start_discovery();
+                }
+            });
+        });
+        ui.add_space(4.0);
+
         egui::Frame::group(ui.style()).show(ui, |ui| {
-            egui::Grid::new("connect-form")
+            ui.set_width(ui.available_width());
+            if self.hits.is_empty() {
+                let msg = if self.is_scanning() {
+                    "Searching the network\u{2026}".to_owned()
+                } else {
+                    "No computers found. Turn on sharing on the other PC under \u{201C}This \
+                     PC\u{201D}, then Rescan."
+                        .to_owned()
+                };
+                ui.label(RichText::new(msg).color(widgets::MUTED));
+            } else {
+                egui::ScrollArea::vertical()
+                    .max_height(180.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("computers")
+                            .num_columns(3)
+                            .striped(true)
+                            .spacing([14.0, 8.0])
+                            .show(ui, |ui| {
+                                for ip in self.hits.clone() {
+                                    self.computer_row(ui, ip);
+                                }
+                            });
+                    });
+            }
+        });
+    }
+
+    fn computer_row(&mut self, ui: &mut Ui, ip: Ipv4Addr) {
+        let name = self.names.get(&ip).cloned();
+        let selected = self.selected == Some(ip);
+        let title = name.clone().unwrap_or_else(|| ip.to_string());
+
+        if ui
+            .selectable_label(selected, RichText::new(title).size(15.0))
+            .clicked()
+        {
+            self.select(ip);
+        }
+        let ip_text = if name.is_some() {
+            ip.to_string()
+        } else {
+            String::new()
+        };
+        ui.label(RichText::new(ip_text).color(widgets::MUTED).small());
+        ui.horizontal(|ui| {
+            if name.is_some() && self.last_used.as_deref() == name.as_deref() {
+                widgets::badge(ui, "last used", ACCENT);
+            }
+            if Some(ip) == self.name_match {
+                widgets::badge(ui, "name match", ACCENT);
+            }
+        });
+        ui.end_row();
+    }
+
+    /// Credentials for the selected computer, plus an advanced section.
+    fn sign_in(&mut self, ui: &mut Ui) {
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let header = match self.selected {
+                Some(ip) => format!("Sign in to {}", self.host_label(ip)),
+                None => "Sign in".to_owned(),
+            };
+            ui.strong(header);
+            widgets::caption(
+                ui,
+                "Use the account set on that PC. After the first connect only the password \
+                 is needed.",
+            );
+            ui.add_space(6.0);
+            egui::Grid::new("creds")
                 .num_columns(2)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("PC name");
-                    ui.text_edit_singleline(&mut self.name);
+                    ui.label("Username");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.username)
+                            .hint_text("the account on that PC"),
+                    );
                     ui.end_row();
-                    ui.label("Port");
-                    ui.add(egui::TextEdit::singleline(&mut self.port).desired_width(80.0));
+                    ui.label("Password");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.password)
+                            .password(true)
+                            .hint_text("connects without a prompt"),
+                    );
                     ui.end_row();
                 });
-            ui.checkbox(&mut self.fullscreen, "Open full screen");
-        });
-
-        ui.add_space(10.0);
-        self.buttons(ui);
-        ui.add_space(8.0);
-        ui.separator();
-        widgets::caption(ui, &self.status);
-
-        if !self.hits.is_empty() {
-            self.results(ui);
-        }
-    }
-
-    fn buttons(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            let busy = self.is_scanning();
-            let label = if busy {
-                "Discovering\u{2026}"
-            } else {
-                "Discover"
-            };
-            if ui
-                .add_enabled(
-                    !busy,
-                    egui::Button::new(label).min_size(egui::vec2(120.0, 30.0)),
-                )
-                .clicked()
-            {
-                self.start_discovery();
-            }
-            if let Some(ip) = self.selected {
-                let text = RichText::new(format!("Connect to {ip}"))
-                    .color(Color32::WHITE)
-                    .strong();
-                let button = egui::Button::new(text)
-                    .fill(ACCENT)
-                    .min_size(egui::vec2(170.0, 30.0));
-                if ui.add(button).clicked() {
-                    self.connect(ip);
-                }
-            }
-        });
-    }
-
-    fn results(&mut self, ui: &mut Ui) {
-        ui.add_space(8.0);
-        ui.label(RichText::new(format!("{} found", self.hits.len())).strong());
-        egui::ScrollArea::vertical()
-            .max_height(180.0)
-            .show(ui, |ui| {
-                for ip in self.hits.clone() {
-                    ui.horizontal(|ui| {
-                        let chosen = self.selected == Some(ip);
-                        if ui
-                            .selectable_label(chosen, RichText::new(ip.to_string()).monospace())
-                            .clicked()
-                        {
-                            self.selected = Some(ip);
-                        }
-                        if Some(ip) == self.name_match {
-                            widgets::badge(ui, "name match", ACCENT);
-                        }
+            egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
+                egui::Grid::new("adv")
+                    .num_columns(2)
+                    .spacing([12.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.label("Find by name");
+                        ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("optional"));
+                        ui.end_row();
+                        ui.label("Port");
+                        ui.add(egui::TextEdit::singleline(&mut self.port).desired_width(80.0));
+                        ui.end_row();
+                        ui.label("Full screen");
+                        ui.checkbox(&mut self.fullscreen, "");
+                        ui.end_row();
                     });
-                }
             });
+        });
+    }
+
+    fn connect_bar(&mut self, ui: &mut Ui) {
+        let target = self.selected;
+        let label = match target {
+            Some(ip) => format!("Connect to {}", self.host_label(ip)),
+            None => "Connect".to_owned(),
+        };
+        let button = egui::Button::new(RichText::new(label).color(Color32::WHITE).strong())
+            .fill(ACCENT)
+            .min_size(egui::vec2(240.0, 40.0));
+        if ui.add_enabled(target.is_some(), button).clicked() {
+            if let Some(ip) = target {
+                self.connect(ip);
+            }
+        }
+        if !self.status.is_empty() {
+            ui.add_space(6.0);
+            widgets::caption(ui, &self.status);
+        }
     }
 }

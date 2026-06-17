@@ -56,10 +56,41 @@ The same `neardesk.exe` runs on both ends — there's nothing else to install.
 
 1. **By name** — resolves `OFFICE-PC`, then `OFFICE-PC.local` (mDNS), and checks the
    Remote Desktop port is open.
-2. **By scan** — in parallel it probes every host on your `/24` subnet for an open
-   RDP port (3389). If the name resolves to one of those hosts, that's your match;
-   if only one host answers, it is selected automatically; otherwise you pick from
-   the list.
+2. **By scan** — in parallel it probes every host on each network you're attached
+   to (Wi-Fi, Ethernet, VPN) for an open RDP port (3389), then reads each host's
+   real name from its RDP certificate. The last-used PC is auto-selected.
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph app["neardesk — egui GUI"]
+        connect["Connect view"]
+        thispc["This PC view"]
+    end
+
+    subgraph core["neardesk-core — std only"]
+        discovery["Discovery<br/>scan all subnets + RDP-cert names"]
+        launch["Launch<br/>build .rdp, match resolution"]
+        share["Share<br/>enable RDP, grant admin, clipboard"]
+        sysinfo["System info"]
+    end
+
+    connect --> discovery
+    connect --> launch
+    thispc --> share
+    thispc --> sysinfo
+
+    discovery -->|TCP 3389| lan(("LAN"))
+    share -->|reg / net / powercfg| host["Windows RDP host"]
+    launch -->|mstsc| session["Remote Desktop session"]
+    lan --> remote["Remote Windows PC"]
+    session --> remote
+    host -.-> remote
+```
+
+The same `neardesk.exe` plays both roles: **This PC** configures the local
+machine as an RDP host; **Connect** discovers and opens sessions to others.
 
 ## Quick start
 

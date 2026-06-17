@@ -49,6 +49,7 @@ impl App {
     }
 
     fn sidebar(&mut self, ui: &mut egui::Ui) {
+        let host = self.this_pc.info().hostname.clone();
         ui.add_space(12.0);
         ui.vertical_centered(|ui| {
             ui.add(logo::image(&self.logo, 104.0));
@@ -57,6 +58,13 @@ impl App {
                 egui::RichText::new("LAN Remote Desktop")
                     .color(widgets::MUTED)
                     .small(),
+            );
+            ui.add_space(2.0);
+            ui.label(
+                egui::RichText::new(format!("This PC: {host}"))
+                    .color(widgets::ACCENT)
+                    .small()
+                    .strong(),
             );
         });
         ui.add_space(16.0);
