@@ -5,9 +5,12 @@
 <h1 align="center">NearDesk</h1>
 
 <p align="center">
-  <a href="https://github.com/chanakanakandala/neardesk/actions/workflows/ci.yml">
-    <img src="https://github.com/chanakanakandala/neardesk/actions/workflows/ci.yml/badge.svg" alt="CI">
-  </a>
+  <a href="https://github.com/chanakanakandala/neardesk/actions/workflows/ci.yml"><img src="https://github.com/chanakanakandala/neardesk/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/chanakanakandala/neardesk/releases/latest"><img src="https://img.shields.io/github/v/release/chanakanakandala/neardesk?color=2f81f7" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/chanakanakandala/neardesk?color=3fb950" alt="License: MIT"></a>
+  <a href="https://github.com/chanakanakandala/neardesk/releases"><img src="https://img.shields.io/github/downloads/chanakanakandala/neardesk/total?color=8957e5" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform: Windows">
+  <img src="https://img.shields.io/badge/built%20with-Rust-CE412B?logo=rust&logoColor=white" alt="Built with Rust">
 </p>
 
 **Zero-config Remote Desktop for your LAN.** Run one small app on any Windows PC.
