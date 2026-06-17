@@ -4,6 +4,12 @@
 
 <h1 align="center">NearDesk</h1>
 
+<p align="center">
+  <a href="https://github.com/chanakanakandala/neardesk/actions/workflows/ci.yml">
+    <img src="https://github.com/chanakanakandala/neardesk/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
+</p>
+
 **Zero-config Remote Desktop for your LAN.** Run one small app on any Windows PC.
 On the PC you want to reach, flip on sharing with a single click; from another PC,
 NearDesk finds it on the network by name (or by scanning for the Remote Desktop

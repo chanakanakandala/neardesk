@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add rustfmt + clippy
+        run: rustup component add rustfmt clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Lint (fmt + clippy)
+        run: ./check.ps1
+        shell: pwsh
+
+      - name: Build (release)
+        run: ./build.ps1
+        shell: pwsh
+
+      - name: Upload neardesk.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: neardesk
+          path: target/release/neardesk.exe
