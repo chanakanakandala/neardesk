@@ -156,20 +156,22 @@ as an RDP host; **Connect** discovers and opens sessions to others.
 
 ### 1. Install
 
-**Download (fastest):** grab `neardesk.exe` from the
-[latest release](https://github.com/chanakanakandala/neardesk/releases/latest) and
-run it on each PC. Nothing else is needed.
+Grab the build for your OS from the
+[latest release](https://github.com/chanakanakandala/neardesk/releases/latest):
 
-**Or build from source.** You need the [Rust toolchain](https://rustup.rs) and the
-**MSVC C++ Build Tools**:
+- **Windows** — `neardesk.exe`, just run it.
+- **macOS** — `neardesk-macos.tar.gz`; unzip, then clear the quarantine flag and open
+  it: `xattr -dr com.apple.quarantine NearDesk.app && open NearDesk.app`. To connect
+  to an RDP host, install FreeRDP: `brew install freerdp`.
+- **Linux** — `neardesk-linux.tar.gz`; install a client to connect, e.g.
+  `sudo apt install -y freerdp3-x11 remmina remmina-plugin-vnc`.
+
+**Or build from source** with the [Rust toolchain](https://rustup.rs) — plus the
+**MSVC C++ Build Tools** on Windows, or X11/GTK/ALSA dev headers on Linux:
 
 ```sh
-winget install Rustlang.Rustup
-winget install Microsoft.VisualStudio.2022.BuildTools `
-  --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-
 cd neardesk
-cargo build --release          # or:  ./build.ps1   (-Clean / -Run)
+cargo build --release
 ```
 
 ### 2. Share the PC you want to reach
