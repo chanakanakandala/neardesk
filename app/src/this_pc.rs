@@ -54,7 +54,7 @@ impl ThisPc {
     /// Enable Remote Desktop, set the password, grant admin + RDP access.
     fn turn_on(&mut self) {
         let user = self.info.username.clone();
-        self.steps = to_steps(nd::share_this_pc(&user, &self.password));
+        self.steps = to_steps(nd::share(&user, &self.password));
         self.refresh();
     }
 
@@ -94,8 +94,8 @@ impl ThisPc {
                     widgets::info_row(ui, "Architecture", &self.info.arch);
                     widgets::info_row(ui, "IP address", &self.info.ip);
 
-                    ui.label(egui::RichText::new("Remote Desktop").color(widgets::MUTED));
-                    if self.info.rdp_enabled {
+                    ui.label(egui::RichText::new("Remote access").color(widgets::MUTED));
+                    if self.info.sharing_enabled {
                         widgets::badge(ui, "Enabled", OK);
                     } else {
                         widgets::badge(ui, "Disabled", BAD);
@@ -133,7 +133,7 @@ impl ThisPc {
 
             ui.add_space(2.0);
             ui.horizontal(|ui| {
-                if self.info.rdp_enabled {
+                if self.info.sharing_enabled {
                     widgets::badge(ui, "On", OK);
                     ui.label("Other PCs on your network can connect to this computer.");
                 } else {
@@ -157,7 +157,7 @@ impl ThisPc {
                     widgets::info_row(ui, "Your account", &account);
                 });
             ui.add_space(10.0);
-            let label = if self.info.rdp_enabled {
+            let label = if self.info.sharing_enabled {
                 "Re-apply remote access"
             } else {
                 "Turn on remote access"
@@ -183,7 +183,7 @@ impl ThisPc {
                 );
             });
 
-            if self.info.rdp_enabled {
+            if self.info.sharing_enabled {
                 ui.add_space(12.0);
                 ui.separator();
                 ui.add_space(6.0);

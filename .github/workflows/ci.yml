@@ -7,7 +7,11 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
@@ -16,22 +20,33 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Lint (fmt + clippy)
-        run: ./check.ps1
-        shell: pwsh
+      # eframe/egui needs X11, GTK and ALSA dev headers on Linux.
+      - name: Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libssl-dev libgtk-3-dev libasound2-dev
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Build (release)
-        run: ./build.ps1
-        shell: pwsh
+        run: cargo build --workspace --release
 
       - name: Upload neardesk.exe
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7
         with:
           name: neardesk
           path: target/release/neardesk.exe
 
   # On a green main build, publish a release when the crate version is new.
-  # Bump `version` in Cargo.toml to cut a release; otherwise this is a no-op.
+  # Windows binary for now; macOS/Linux packaging is a later phase.
   release:
     needs: build
     if: github.ref == 'refs/heads/main'
@@ -80,3 +95,5 @@ jobs:
             Not code-signed yet, so Windows SmartScreen may warn on first run — choose **More info → Run anyway**.
 
             Verify the download: `CertUtil -hashfile neardesk.exe SHA256` should match `neardesk.exe.sha256`.
+
+            macOS and Linux builds are in progress — for now build from source with `cargo build --release`.

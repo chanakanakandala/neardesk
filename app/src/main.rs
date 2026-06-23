@@ -85,11 +85,11 @@ impl App {
             });
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("Remote Desktop")
+                    egui::RichText::new("Remote access")
                         .color(widgets::MUTED)
                         .small(),
                 );
-                if info.rdp_enabled {
+                if info.sharing_enabled {
                     widgets::badge(ui, "on", widgets::OK);
                 } else {
                     widgets::badge(ui, "off", widgets::BAD);

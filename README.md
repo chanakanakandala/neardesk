@@ -7,7 +7,7 @@
   <a href="https://github.com/chanakanakandala/neardesk/releases/latest"><img src="https://img.shields.io/github/v/release/chanakanakandala/neardesk?color=2f81f7&v=2" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/chanakanakandala/neardesk?color=3fb950&v=2" alt="License: MIT"></a>
   <a href="https://github.com/chanakanakandala/neardesk/releases"><img src="https://img.shields.io/github/downloads/chanakanakandala/neardesk/total?color=8957e5&v=2" alt="Downloads"></a>
-  <img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform: Windows">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2f81f7" alt="Platforms">
   <img src="https://img.shields.io/badge/built%20with-Rust-CE412B?logo=rust&logoColor=white" alt="Built with Rust">
 </p>
 
@@ -84,6 +84,23 @@ routes your traffic through a server.
 
 > Releases are not code-signed yet, so Windows SmartScreen may warn on first run.
 > Choose **More info → Run anyway**, or [build from source](#getting-started).
+
+## Platforms
+
+NearDesk targets **Windows, macOS, and Linux** and connects any-to-any using each
+OS's native remote-desktop stack. No single protocol hosts on all three, so
+NearDesk is protocol-aware: discovery scans for both and labels every machine
+**RDP** or **VNC**.
+
+| Connecting to a host on... | Protocol | Client launched |
+|---|---|---|
+| **Windows** / **Linux** | RDP (3389) | `mstsc`, FreeRDP, Remmina, or macOS `rdp://` |
+| **macOS** | VNC (5900) | macOS Screen Sharing, Remmina (Windows viewer soon) |
+
+Windows is fully supported (connect plus one-click sharing). **macOS and Linux are
+new:** connecting works today by launching the native client; hosting is guided
+(macOS requires a one-time Screen Recording approval that Apple mandates). See the
+[Roadmap](#roadmap).
 
 ## One app, three tabs
 
@@ -181,7 +198,8 @@ is left entirely to Windows.
 
 ```
 neardesk/
-├─ core/            # neardesk-core: discovery, system info, RDP setup (std-only, no deps)
+├─ core/            # neardesk-core: discovery + protocol detection (portable)
+│  └─ src/platform/ # per-OS backends: windows.rs, macos.rs, linux.rs
 ├─ app/             # neardesk GUI
 │  ├─ build.rs      # embeds version metadata, manifest and icon
 │  └─ src/
@@ -205,6 +223,7 @@ The `core` crate is intentionally dependency-free `std`; only the GUI pulls in
 NearDesk is the control layer today; the goal is a lightweight local agent
 workspace. Planned, roughly in order:
 
+- **macOS / Linux hosting:** guided Screen Sharing (macOS) and xrdp/GNOME (Linux), plus a bundled VNC viewer so Windows can reach a Mac.
 - **Status notes:** a quick line per machine (*running backend refactor*, *idle*, *blocked*).
 - **Quick actions:** copy hostname or RDP command, open a shared folder.
 - **Health at a glance:** online or offline, and RDP-reachable.
@@ -215,7 +234,8 @@ Issues and ideas welcome.
 ## Contributing
 
 Issues and PRs welcome. Run `./check.ps1` (formatting and clippy) before
-submitting, and keep `core` free of third-party crates.
+submitting. OS-specific code lives behind `core/src/platform/{windows,macos,linux}.rs`;
+keep everything else OS-agnostic.
 
 | Script | What it does |
 |--------|--------------|
