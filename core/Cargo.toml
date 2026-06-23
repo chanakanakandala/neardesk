@@ -11,3 +11,5 @@ path = "src/lib.rs"
 [dependencies]
 # Cross-platform local interface enumeration (replaces per-OS shell-outs).
 if-addrs = "0.13"
+# Resolve machine names over mDNS/Bonjour (esp. macOS Screen Sharing hosts).
+mdns-sd = "0.11"

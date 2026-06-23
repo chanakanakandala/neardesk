@@ -14,7 +14,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 mod platform;
 pub use platform::{launch, relaunch_elevated, share, system_info, SystemInfo};
@@ -231,6 +231,51 @@ fn confirm_all(open: Vec<(Ipv4Addr, u16)>) -> Vec<(Ipv4Addr, Protocol)> {
     v
 }
 
+/// Browse mDNS/Bonjour for a short window, mapping each advertised IPv4 to its
+/// machine name. macOS Screen Sharing advertises `_rfb._tcp`; Avahi advertises
+/// `_workstation._tcp`. Best-effort: any failure yields an empty map.
+fn mdns_names(window: Duration) -> HashMap<Ipv4Addr, String> {
+    use mdns_sd::{ServiceDaemon, ServiceEvent};
+    let mut map = HashMap::new();
+    let Ok(daemon) = ServiceDaemon::new() else {
+        return map;
+    };
+    let mut receivers = Vec::new();
+    for svc in [
+        "_rfb._tcp.local.",
+        "_workstation._tcp.local.",
+        "_rdp._tcp.local.",
+    ] {
+        if let Ok(r) = daemon.browse(svc) {
+            receivers.push(r);
+        }
+    }
+    let start = Instant::now();
+    while start.elapsed() < window {
+        for r in &receivers {
+            if let Ok(ServiceEvent::ServiceResolved(info)) =
+                r.recv_timeout(Duration::from_millis(80))
+            {
+                let host = info
+                    .get_hostname()
+                    .trim_end_matches('.')
+                    .trim_end_matches(".local")
+                    .to_string();
+                if host.is_empty() {
+                    continue;
+                }
+                for addr in info.get_addresses() {
+                    if let IpAddr::V4(v4) = addr {
+                        map.entry(*v4).or_insert_with(|| host.clone());
+                    }
+                }
+            }
+        }
+    }
+    let _ = daemon.shutdown();
+    map
+}
+
 /// Read each host's real computer name concurrently (OS-specific).
 fn resolve_names(hosts: &[Host]) -> HashMap<Ipv4Addr, String> {
     let (tx, rx) = mpsc::channel();
@@ -256,6 +301,9 @@ fn resolve_names(hosts: &[Host]) -> HashMap<Ipv4Addr, String> {
 /// Discover machines: scan every local /24 for RDP (3389) and VNC (5900),
 /// confirm each protocol, then read names.
 pub fn discover(name: &str) -> Discovery {
+    // Browse mDNS in the background while we port-scan.
+    let mdns = thread::spawn(|| mdns_names(Duration::from_millis(1500)));
+
     let locals = local_ipv4s();
     let local_set: HashSet<Ipv4Addr> = locals.iter().copied().collect();
 
@@ -308,9 +356,14 @@ pub fn discover(name: &str) -> Discovery {
         .collect();
     hosts.sort_by_key(|h| h.ip);
 
-    let names = resolve_names(&hosts);
+    // Names: prefer the RDP certificate CN (OS-specific), fall back to mDNS.
+    let cert_names = resolve_names(&hosts);
+    let mdns_map = mdns.join().unwrap_or_default();
     for host in &mut hosts {
-        host.name = names.get(&host.ip).cloned();
+        host.name = cert_names
+            .get(&host.ip)
+            .cloned()
+            .or_else(|| mdns_map.get(&host.ip).cloned());
     }
 
     let name_match = if typed.is_empty() {

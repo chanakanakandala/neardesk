@@ -45,9 +45,23 @@ jobs:
           name: neardesk-windows
           path: target/release/neardesk.exe
 
-      - name: Package macOS
+      - name: Package macOS .app
         if: runner.os == 'macOS'
-        run: tar -C target/release -czf neardesk-macos.tar.gz neardesk
+        run: |
+          VER=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          APP="NearDesk.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release/neardesk "$APP/Contents/MacOS/neardesk"
+          chmod +x "$APP/Contents/MacOS/neardesk"
+          sed "s/__VERSION__/$VER/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          mkdir -p iconset
+          for SZ in 16 32 128 256 512; do
+            sips -z $SZ $SZ assets/logo.png --out "iconset/icon_${SZ}x${SZ}.png" >/dev/null 2>&1 || true
+            D=$((SZ*2))
+            sips -z $D $D assets/logo.png --out "iconset/icon_${SZ}x${SZ}@2x.png" >/dev/null 2>&1 || true
+          done
+          iconutil -c icns iconset -o "$APP/Contents/Resources/neardesk.icns" 2>/dev/null || true
+          tar -czf neardesk-macos.tar.gz "$APP"
       - name: Upload macOS
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v7
