@@ -1,7 +1,7 @@
 //! Linux backend: FreeRDP / Remmina / GNOME Connections as clients; xrdp or
 //! GNOME Remote Desktop for hosting (guided in a later phase).
 
-use super::{capture, SystemInfo};
+use super::{capture, run, SystemInfo};
 use crate::{current_username, primary_ipv4, Protocol};
 use std::io;
 use std::net::Ipv4Addr;
@@ -74,18 +74,32 @@ pub fn relaunch_elevated() -> io::Result<()> {
     Ok(())
 }
 
+/// Enable an xrdp host. The user keeps their existing system password, so no
+/// password is set here. Experimental: assumes apt (Debian/Ubuntu) and an Xorg
+/// session (Wayland often yields a black xrdp screen).
 pub fn share(_username: &str, _password: &str) -> Vec<(String, Result<(), String>)> {
-    let admin = if is_root() { "" } else { " (needs sudo)" };
-    vec![(
-        format!("Share this PC{admin}"),
-        Err(
-            "Hosting from Linux is coming soon. For now enable an RDP host with:  \
-             sudo apt install -y xrdp && sudo adduser xrdp ssl-cert && sudo systemctl \
-             enable --now xrdp && sudo ufw allow 3389/tcp  (use an Xorg session). \
-             Connecting FROM this PC already works once a client is installed."
-                .to_string(),
+    let script = "apt-get install -y xrdp && adduser xrdp ssl-cert && \
+                  systemctl enable --now xrdp && ufw allow 3389/tcp 2>/dev/null; true";
+    let result = if is_root() {
+        run("sh", &["-c", script])
+    } else if which("pkexec") {
+        run("pkexec", &["sh", "-c", script])
+    } else {
+        Err("Need root or pkexec. Run: sudo apt install -y xrdp && \
+             sudo systemctl enable --now xrdp && sudo ufw allow 3389/tcp"
+            .to_string())
+    };
+    vec![
+        ("Enable Remote Desktop (xrdp)".to_string(), result),
+        (
+            "Use an Xorg session".to_string(),
+            Err(
+                "If the remote screen is black, log out and choose \u{201C}Ubuntu on \
+                 Xorg\u{201D} at the login screen."
+                    .to_string(),
+            ),
         ),
-    )]
+    ]
 }
 
 pub fn launch(

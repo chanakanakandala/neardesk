@@ -5,7 +5,7 @@
 //! user must approve Screen Recording once (see `share`). Connecting *from* a
 //! Mac works with no extra setup for VNC hosts.
 
-use super::{capture, SystemInfo};
+use super::{capture, run, SystemInfo};
 use crate::{current_username, primary_ipv4, Protocol};
 use std::io;
 use std::net::Ipv4Addr;
@@ -25,10 +25,6 @@ fn arch() -> String {
         "aarch64" => "ARM64".to_string(),
         other => other.to_string(),
     }
-}
-
-fn is_root() -> bool {
-    capture("id", &["-u"]) == "0"
 }
 
 pub fn system_info() -> SystemInfo {
@@ -72,18 +68,54 @@ pub fn relaunch_elevated() -> io::Result<()> {
     Ok(())
 }
 
-pub fn share(_username: &str, _password: &str) -> Vec<(String, Result<(), String>)> {
-    let admin = if is_root() { "" } else { " (needs admin)" };
-    vec![(
-        format!("Share this Mac{admin}"),
+const KICKSTART: &str =
+    "/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart";
+
+/// Share this Mac over VNC. Experimental and guided: Apple requires a one-time
+/// Screen Recording approval that no app can grant, so this sets the password
+/// and starts the service (one admin prompt), then opens the consent pane.
+pub fn share(_username: &str, password: &str) -> Vec<(String, Result<(), String>)> {
+    let mut steps = Vec::new();
+
+    if password.is_empty() {
+        steps.push((
+            "Set a password".to_string(),
+            Err("Enter a short password (max 8 characters) to connect with.".to_string()),
+        ));
+    } else {
+        // Legacy VNC auth is limited to 8 effective characters.
+        let pw: String = password.chars().take(8).collect();
+        // One privileged step (a single GUI admin prompt) sets the VNC password
+        // and starts the built-in Screen Sharing service on port 5900.
+        let inner = format!(
+            "{KICKSTART} -configure -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw {pw} ; \
+             launchctl enable system/com.apple.screensharing ; \
+             launchctl bootstrap system /System/Library/LaunchDaemons/com.apple.screensharing.plist"
+        );
+        let osa = format!(
+            "do shell script \"{}\" with administrator privileges",
+            inner.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        steps.push((
+            "Enable Screen Sharing and set the password".to_string(),
+            run("osascript", &["-e", &osa]),
+        ));
+    }
+
+    // The one thing only a human can do: grant Screen Recording in Settings.
+    let _ = Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        .spawn();
+    steps.push((
+        "Allow Screen Recording (one-time click in Settings)".to_string(),
         Err(
-            "Hosting from macOS is coming soon. macOS needs Screen Sharing turned on \
-             in System Settings \u{2192} General \u{2192} Sharing, plus a one-time Screen \
-             Recording approval (Apple requires the click). Connecting FROM this Mac \
-             already works."
+            "Opened System Settings \u{2192} Privacy & Security \u{2192} Screen \
+             Recording. Turn it on for Screen Sharing — Apple requires this click; it \
+             can't be scripted."
                 .to_string(),
         ),
-    )]
+    ));
+    steps
 }
 
 pub fn launch(

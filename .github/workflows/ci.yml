@@ -38,15 +38,34 @@ jobs:
       - name: Build (release)
         run: cargo build --workspace --release
 
-      - name: Upload neardesk.exe
+      - name: Package Windows
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7
         with:
-          name: neardesk
+          name: neardesk-windows
           path: target/release/neardesk.exe
 
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        run: tar -C target/release -czf neardesk-macos.tar.gz neardesk
+      - name: Upload macOS
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: neardesk-macos
+          path: neardesk-macos.tar.gz
+
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        run: tar -C target/release -czf neardesk-linux.tar.gz neardesk
+      - name: Upload Linux
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: neardesk-linux
+          path: neardesk-linux.tar.gz
+
   # On a green main build, publish a release when the crate version is new.
-  # Windows binary for now; macOS/Linux packaging is a later phase.
   release:
     needs: build
     if: github.ref == 'refs/heads/main'
@@ -69,16 +88,16 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Download built exe
+      - name: Download artifacts
         if: steps.ver.outputs.exists == 'false'
         uses: actions/download-artifact@v8
         with:
-          name: neardesk
           path: dist
+          merge-multiple: true
 
-      - name: Checksum
+      - name: Checksums
         if: steps.ver.outputs.exists == 'false'
-        run: cd dist && sha256sum neardesk.exe | tee neardesk.exe.sha256
+        run: cd dist && sha256sum * | tee SHA256SUMS.txt
 
       - name: Publish release
         if: steps.ver.outputs.exists == 'false'
@@ -87,13 +106,18 @@ jobs:
           tag_name: ${{ steps.ver.outputs.tag }}
           files: |
             dist/neardesk.exe
-            dist/neardesk.exe.sha256
+            dist/neardesk-macos.tar.gz
+            dist/neardesk-linux.tar.gz
+            dist/SHA256SUMS.txt
           generate_release_notes: true
           body: |
-            **Windows build of NearDesk.** Download `neardesk.exe` and run it on each PC — nothing else to install.
+            **NearDesk for Windows, macOS, and Linux.**
 
-            Not code-signed yet, so Windows SmartScreen may warn on first run — choose **More info → Run anyway**.
+            - **Windows** — `neardesk.exe`, just run it.
+            - **macOS** — `neardesk-macos.tar.gz`. Unzip, then clear the quarantine flag:
+              `xattr -dr com.apple.quarantine neardesk && ./neardesk`
+            - **Linux** — `neardesk-linux.tar.gz`. Needs a remote-desktop client for connecting
+              (e.g. `sudo apt install -y freerdp3-x11`).
 
-            Verify the download: `CertUtil -hashfile neardesk.exe SHA256` should match `neardesk.exe.sha256`.
-
-            macOS and Linux builds are in progress — for now build from source with `cargo build --release`.
+            Not code-signed yet, so Windows SmartScreen / macOS Gatekeeper may warn on first run.
+            Verify your download against `SHA256SUMS.txt`.

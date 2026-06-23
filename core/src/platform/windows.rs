@@ -5,6 +5,7 @@ use crate::{current_username, primary_ipv4, Protocol};
 use std::fs;
 use std::io;
 use std::net::Ipv4Addr;
+use std::path::Path;
 use std::process::Command;
 
 // Minimal Win32 bindings (in-process — no spawned helper).
@@ -334,11 +335,7 @@ pub fn launch(
     protocol: Protocol,
 ) -> io::Result<()> {
     if protocol == Protocol::Vnc {
-        // Windows has no built-in VNC client; bundling a viewer is a later phase.
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "Connecting to a Mac (VNC) from Windows needs a VNC viewer — coming soon.",
-        ));
+        return launch_vnc(ip);
     }
 
     let user = username.trim();
@@ -394,6 +391,70 @@ pub fn launch(
     let path = std::env::temp_dir().join("neardesk.rdp");
     fs::write(&path, rdp)?;
     Command::new("mstsc").arg(&path).spawn().map(|_| ())
+}
+
+// ---------------------------------------------------------------------------
+// Connecting to a Mac/VNC host (Windows has no built-in VNC client)
+// ---------------------------------------------------------------------------
+
+/// First match of `bin` on the PATH, via `where`.
+fn where_is(bin: &str) -> Option<String> {
+    let out = hidden("where").arg(bin).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .map(|s| s.trim().to_string())
+}
+
+/// Find an installed VNC viewer and the args to connect to `ip:5900`.
+fn find_vnc_viewer(ip: Ipv4Addr) -> Option<(String, Vec<String>)> {
+    // `host::5900` forces an absolute port for TigerVNC / RealVNC / UltraVNC.
+    let target = format!("{ip}::5900");
+    if let Some(p) = where_is("vncviewer.exe") {
+        return Some((p, vec![target]));
+    }
+    for path in [
+        r"C:\Program Files\RealVNC\VNC Viewer\vncviewer.exe",
+        r"C:\Program Files\uvnc bvba\UltraVNC\vncviewer.exe",
+    ] {
+        if Path::new(path).exists() {
+            return Some((path.to_string(), vec![target.clone()]));
+        }
+    }
+    // TightVNC uses a different binary and flags.
+    let tight_args = vec![format!("-host={ip}"), "-port=5900".to_string()];
+    if let Some(p) = where_is("tvnviewer.exe") {
+        return Some((p, tight_args));
+    }
+    let tight = r"C:\Program Files\TightVNC\tvnviewer.exe";
+    if Path::new(tight).exists() {
+        return Some((tight.to_string(), tight_args));
+    }
+    None
+}
+
+fn launch_vnc(ip: Ipv4Addr) -> io::Result<()> {
+    if let Some((bin, args)) = find_vnc_viewer(ip) {
+        return Command::new(bin).args(args).spawn().map(|_| ());
+    }
+    // No viewer installed: open the RealVNC download page (it does native macOS
+    // login auth) and tell the user to install it, then retry.
+    let _ = Command::new("cmd")
+        .args([
+            "/C",
+            "start",
+            "",
+            "https://www.realvnc.com/connect/download/viewer/windows/",
+        ])
+        .spawn();
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "No VNC viewer found. Opened the RealVNC Viewer download page — install it, \
+         then press Connect again.",
+    ))
 }
 
 // ---------------------------------------------------------------------------
